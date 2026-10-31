@@ -1,0 +1,205 @@
+name: test
+
+# Build every recipe in its own distro, install the result and check it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: git ref to test
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  REF: ${{ inputs.ref || github.ref }}
+
+jobs:
+  upstream:
+    name: upstream index signature
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: upstream.env matches Anthropic's signed index
+        run: |
+          . ./upstream.env
+          scripts/upstream.sh "$VERSION" | grep -v '^#' > /tmp/expected
+          grep -v '^#' upstream.env | diff -u /tmp/expected -
+
+  arch:
+    name: Arch (x86_64 install + aarch64 package)
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Build and install x86_64
+        run: |
+          pacman -Syu --noconfirm --needed file
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          chown -R builder .
+          (cd arch && sudo -u builder makepkg --noconfirm --syncdeps)
+          pacman -U --noconfirm arch/claude-desktop-*-x86_64.pkg.tar.zst
+          pacman -S --noconfirm --needed qemu-system-x86 edk2-ovmf
+      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+      - name: Package aarch64 (repackaging only, so it builds on x86_64)
+        run: |
+          sed -e 's/^CARCH=.*/CARCH="aarch64"/' \
+              -e 's/^CHOST=.*/CHOST="aarch64-unknown-linux-gnu"/' \
+              /etc/makepkg.conf > /tmp/makepkg-aarch64.conf
+          (cd arch && sudo -u builder makepkg --config /tmp/makepkg-aarch64.conf --nodeps --noconfirm -f)
+          mkdir /tmp/a && bsdtar -xf arch/claude-desktop-*-aarch64.pkg.tar.zst -C /tmp/a
+          CHECK_LIBS=0 tests/check-install.sh /tmp/a
+          file -L /tmp/a/usr/lib/claude-desktop/claude-desktop | grep -q aarch64
+          # edk2-aarch64 must provide the AAVMF paths Cowork needs
+          pacman -Fy >/dev/null
+          pacman -Fl edk2-aarch64 | grep -q 'usr/share/AAVMF/AAVMF_CODE.fd'
+          pacman -Fl edk2-aarch64 | grep -q 'usr/share/AAVMF/AAVMF_VARS.fd'
+
+  fedora:
+    name: Fedora
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Build RPM
+        run: |
+          dnf -y install rpm-build binutils tar xz zstd file findutils curl
+          rpmbuild -bb --undefine=_disable_source_fetch \
+            --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
+      - name: Install
+        run: dnf -y install ./rpmbuild/RPMS/x86_64/claude-desktop-*.rpm qemu-system-x86-core edk2-ovmf
+      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+
+  el9:
+    name: AlmaLinux 9 (RHEL 9)
+    runs-on: ubuntu-latest
+    container: almalinux:9
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Build and install RPM
+        run: |
+          dnf -y install rpm-build binutils tar xz zstd file findutils
+          rpmbuild -bb --undefine=_disable_source_fetch \
+            --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
+          dnf -y install ./rpmbuild/RPMS/x86_64/claude-desktop-*.rpm
+      - run: tests/check-install.sh
+
+  opensuse:
+    name: openSUSE Tumbleweed
+    runs-on: ubuntu-latest
+    container: opensuse/tumbleweed
+    steps:
+      - name: Prepare (checkout needs tar + gzip)
+        run: zypper -n install tar gzip
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Build RPM
+        run: |
+          zypper -n install rpm-build binutils xz zstd file findutils curl
+          rpmbuild -bb --undefine=_disable_source_fetch \
+            --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
+      - name: Install
+        run: |
+          zypper -n --no-gpg-checks install --allow-unsigned-rpm \
+            ./rpmbuild/RPMS/x86_64/claude-desktop-*.rpm qemu-x86 qemu-ovmf-x86_64
+      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+
+  gentoo:
+    name: Gentoo (ebuild install)
+    runs-on: ubuntu-latest
+    container: gentoo/stage3:latest
+    env:
+      FEATURES: -sandbox -usersandbox -ipc-sandbox -network-sandbox -pid-sandbox
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Sync ::gentoo and register this overlay
+        run: |
+          emerge-webrsync -q
+          mkdir -p /etc/portage/repos.conf
+          printf '[claude-desktop-linux]\nlocation = %s/gentoo\n' "$PWD" \
+            > /etc/portage/repos.conf/claude-desktop-linux.conf
+      - name: Fetch (verifies Manifest) and install into the image dir
+        run: |
+          cd gentoo/app-misc/claude-desktop
+          ebuild claude-desktop-*.ebuild clean fetch install
+      - name: Check image
+        run: |
+          img=$(echo /var/tmp/portage/app-misc/claude-desktop-*/image)
+          CHECK_LIBS=0 tests/check-install.sh "$img"
+          # the firmware links must point at files sys-firmware/edk2-bin installs
+          for f in OVMF_CODE.fd OVMF_VARS.fd; do
+            readlink "$img/usr/share/OVMF/$f"
+          done
+          grep -rhoE 'OvmfX64' /var/db/repos/gentoo/sys-firmware/edk2-bin/*.ebuild | head -1 | grep -q OvmfX64
+
+  void:
+    name: Void (xbps-src)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/void-linux/void-glibc-full
+      options: --privileged
+    steps:
+      - name: Prepare container
+        run: |
+          xbps-install -Syu xbps && xbps-install -yu
+          xbps-install -y sudo bash curl git file
+          useradd -G xbuilder -M builder
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Build with xbps-src
+        run: |
+          git clone --depth 1 https://github.com/void-linux/void-packages /tmp/vp
+          cp -r void/srcpkgs/claude-desktop /tmp/vp/srcpkgs/
+          chown -R builder:builder /tmp/vp
+          cd /tmp/vp
+          echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
+          echo XBPS_CHROOT_CMD=uchroot >> etc/conf
+          sudo -Eu builder ./xbps-src binary-bootstrap
+          sudo -Eu builder ./xbps-src pkg claude-desktop
+      - name: Install
+        run: |
+          xbps-install -y --repository=/tmp/vp/hostdir/binpkgs/nonfree claude-desktop
+          xbps-install -y qemu-system-amd64 edk2-ovmf
+      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+
+  appimage:
+    name: AppImage (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64,  runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Build
+        run: appimage/build-appimage.sh ${{ matrix.arch }} --out out
+      - name: Check
+        run: |
+          cd out && ./Claude-*-${{ matrix.arch }}.AppImage --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+          test -x squashfs-root/usr/lib/claude-desktop/claude-desktop
+          grep -q '^Exec=AppRun' squashfs-root/com.anthropic.Claude.desktop
+      - name: Smoke test (starts under Xvfb and stays up for 20s)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libnotify4 libsecret-1-0 libxtst6
+          set +e
+          timeout 20 xvfb-run -a out/Claude-*-${{ matrix.arch }}.AppImage --appimage-extract-and-run > app.log 2>&1
+          rc=$?
+          tail -n 30 app.log
+          # 124 = still running when timeout killed it (good)
+          test "$rc" = 124

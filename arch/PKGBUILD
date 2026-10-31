@@ -1,0 +1,95 @@
+# Maintainer: Sina Pirani <sinapiranidev@gmail.com>
+#
+# Repackages Anthropic's official Claude Desktop .deb for Arch Linux, Manjaro,
+# EndeavourOS, CachyOS, Garuda, Arch Linux ARM and other Arch-based distros.
+# The .deb comes straight from Anthropic's apt repository; the checksums below
+# are taken from its GPG-signed index by scripts/upstream.sh.
+
+pkgname=claude-desktop
+pkgver=4.4212.0
+pkgrel=1
+pkgdesc="Desktop application for Claude.ai (official build, repackaged)"
+arch=('x86_64' 'aarch64')
+url="https://claude.ai/download"
+license=('LicenseRef-Anthropic-Proprietary')
+depends=(
+  'alsa-lib' 'at-spi2-core' 'glibc' 'gtk3' 'libdrm' 'libnotify' 'libsecret'
+  'libxcb' 'libxtst' 'mesa' 'nss' 'pipewire' 'util-linux-libs'
+  'xdg-desktop-portal' 'xdg-utils'
+)
+optdepends=(
+  'xdg-desktop-portal-gtk: file chooser on GTK desktops'
+  'xdg-desktop-portal-kde: file chooser on KDE Plasma'
+  'gnome-keyring: keep you signed in (secret storage) outside KDE'
+  'kwallet: keep you signed in (secret storage) on KDE'
+  'libayatana-appindicator: tray icon'
+  'trash-cli: move files to the trash'
+  'bubblewrap: sandbox for Claude Code sessions'
+  'socat: Claude Code / Cowork helpers'
+  'openssh: SSH remote sessions'
+  'gjs: GNOME Shell search provider'
+)
+optdepends_x86_64=(
+  'qemu-system-x86: Cowork (local VM)'
+  'edk2-ovmf: Cowork (VM UEFI firmware)'
+)
+optdepends_aarch64=(
+  'qemu-system-aarch64: Cowork (local VM)'
+  'edk2-aarch64: Cowork (VM UEFI firmware)'
+)
+options=('!strip' '!debug')
+_repo="https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop"
+source_x86_64=("$pkgname-$pkgver-amd64.deb::$_repo/claude-desktop_${pkgver}_amd64.deb")
+source_aarch64=("$pkgname-$pkgver-arm64.deb::$_repo/claude-desktop_${pkgver}_arm64.deb")
+sha256sums_x86_64=('4fcf658e0fc895390ab82593287281dfbce261b0ec3ea90060e82d8bfbfd7a84')
+sha256sums_aarch64=('7022dc56de30e0beb7fa0a7dc84e09aa00d7f9d4e1b7f93043b32baf75a2f6d8')
+noextract=("$pkgname-$pkgver-amd64.deb" "$pkgname-$pkgver-arm64.deb")
+
+_debarch() { [[ $CARCH == aarch64 ]] && echo arm64 || echo amd64; }
+
+prepare() {
+  rm -rf deb && mkdir deb
+  bsdtar -xf "$pkgname-$pkgver-$(_debarch).deb" -C deb
+  local got
+  got=$(bsdtar -xOf deb/control.tar.* ./control | sed -n 's/^Version: //p')
+  [[ $got == "$pkgver" ]] || { error "deb is version $got, expected $pkgver"; return 1; }
+}
+
+package() {
+  bsdtar -xf deb/data.tar.* -C "$pkgdir"
+
+  # Debian-only files
+  rm -rf "$pkgdir/usr/share/lintian"
+  install -Dm644 "$pkgdir/usr/share/doc/claude-desktop/copyright" \
+    "$pkgdir/usr/share/licenses/$pkgname/copyright"
+  rm -rf "$pkgdir/usr/share/doc/claude-desktop"
+
+  # Keep upstream's setuid sandbox helper (4755, as the .deb ships it): only
+  # used where unprivileged user namespaces are unavailable.
+  chmod 4755 "$pkgdir/usr/lib/claude-desktop/chrome-sandbox"
+
+  # What the Debian postinst sets up at install time, as packaged files
+  # (pacman hooks refresh the MIME, desktop and icon caches).
+  local res="$pkgdir/usr/lib/claude-desktop/resources"
+  install -Dm644 "$res/linux-mime/com.anthropic.Claude.xml" \
+    "$pkgdir/usr/share/mime/packages/com.anthropic.Claude.xml"
+  install -Dm644 "$res/gnome-search-provider/com.anthropic.Claude.search-provider.ini" \
+    "$pkgdir/usr/share/gnome-shell/search-providers/com.anthropic.Claude.search-provider.ini"
+  install -Dm644 "$res/gnome-search-provider/com.anthropic.Claude.SearchProvider.service" \
+    "$pkgdir/usr/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service"
+  if [[ -x "$res/bin/ccd" ]]; then
+    ln -s ../lib/claude-desktop/resources/bin/ccd "$pkgdir/usr/bin/ccd"
+  fi
+
+  # Cowork looks for UEFI firmware only at Debian's paths:
+  #   x86_64:  /usr/share/OVMF/OVMF_{CODE,VARS}_4M.fd
+  #   aarch64: /usr/share/AAVMF/AAVMF_{CODE,VARS}.fd
+  # edk2-ovmf makes /usr/share/OVMF a symlink to /usr/share/edk2, so the x86_64
+  # names are added inside /usr/share/edk2 (they dangle harmlessly until
+  # edk2-ovmf is installed). edk2-aarch64 already ships the AAVMF links.
+  if [[ $CARCH == x86_64 ]]; then
+    install -d "$pkgdir/usr/share/edk2"
+    ln -s x64/OVMF_CODE.4m.fd "$pkgdir/usr/share/edk2/OVMF_CODE_4M.fd"
+    ln -s x64/OVMF_VARS.4m.fd "$pkgdir/usr/share/edk2/OVMF_VARS_4M.fd"
+  fi
+}

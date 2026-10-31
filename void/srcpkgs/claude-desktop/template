@@ -1,0 +1,57 @@
+# Template file for 'claude-desktop'
+# Repackages Anthropic's official .deb; checksums come from Anthropic's
+# GPG-signed apt index (github.com/sinapirani/claude-desktop-linux).
+pkgname=claude-desktop
+version=4.4212.0
+revision=1
+archs="x86_64 aarch64"
+depends="alsa-lib at-spi2-core gtk+3 libdrm libgbm libnotify libpipewire
+ libsecret libuuid libxcb libXtst nss xdg-desktop-portal xdg-utils"
+short_desc="Desktop application for Claude.ai (official build, repackaged)"
+maintainer="Sina Pirani <sinapiranidev@gmail.com>"
+license="custom:Proprietary"
+homepage="https://claude.ai/download"
+_repo="https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop"
+
+case "$XBPS_TARGET_MACHINE" in
+x86_64)
+	distfiles="${_repo}/claude-desktop_${version}_amd64.deb"
+	checksum=4fcf658e0fc895390ab82593287281dfbce261b0ec3ea90060e82d8bfbfd7a84
+	;;
+aarch64)
+	distfiles="${_repo}/claude-desktop_${version}_arm64.deb"
+	checksum=7022dc56de30e0beb7fa0a7dc84e09aa00d7f9d4e1b7f93043b32baf75a2f6d8
+	;;
+*)
+	broken="No distfiles available for this target"
+	;;
+esac
+
+repository=nonfree
+restricted=yes
+nostrip=yes
+nopie=yes
+
+do_install() {
+	vcopy usr /
+	rm -rf ${DESTDIR}/usr/share/lintian ${DESTDIR}/usr/share/doc
+	vlicense usr/share/doc/claude-desktop/copyright
+	chmod 4755 ${DESTDIR}/usr/lib/claude-desktop/chrome-sandbox
+
+	# What the Debian postinst sets up at install time
+	local res=usr/lib/claude-desktop/resources
+	vinstall ${res}/linux-mime/com.anthropic.Claude.xml 644 usr/share/mime/packages
+	vinstall ${res}/gnome-search-provider/com.anthropic.Claude.search-provider.ini 644 \
+		usr/share/gnome-shell/search-providers
+	vinstall ${res}/gnome-search-provider/com.anthropic.Claude.SearchProvider.service 644 \
+		usr/share/dbus-1/services
+
+	# Cowork looks for UEFI firmware only at Debian's paths. Void's edk2-ovmf
+	# makes /usr/share/OVMF a symlink to /usr/share/edk2, so add the x86_64
+	# names there. (aarch64: edk2-ovmf already ships /usr/share/AAVMF links.)
+	if [ "$XBPS_TARGET_MACHINE" = x86_64 ]; then
+		vmkdir usr/share/edk2
+		ln -s x64/OVMF_CODE.4m.fd ${DESTDIR}/usr/share/edk2/OVMF_CODE_4M.fd
+		ln -s x64/OVMF_VARS.4m.fd ${DESTDIR}/usr/share/edk2/OVMF_VARS_4M.fd
+	fi
+}

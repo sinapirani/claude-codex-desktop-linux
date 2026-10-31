@@ -1,0 +1,9 @@
+# makepkg
+arch/src/
+arch/pkg/
+arch/*.deb
+arch/*.pkg.tar.*
+# rpmbuild / appimage outputs
+*.rpm
+*.AppImage
+*.deb

@@ -1,0 +1,92 @@
+name: update
+
+# Every 6 hours: if Anthropic published a new Claude Desktop version, update
+# all recipes, run the full test matrix on that change, and only then
+# fast-forward main and tag v<version>-1.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
+      version: ${{ steps.bump.outputs.version }}
+      branch: ${{ steps.push.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Anthropic's signed index and bump
+        id: bump
+        run: scripts/bump.sh
+      - name: Repair Gentoo Manifest if it doesn't cover both architectures
+        id: manifest
+        if: steps.bump.outputs.changed != 'true'
+        run: |
+          . ./upstream.env
+          m=gentoo/app-misc/claude-desktop/Manifest
+          n=$(grep -c "_${VERSION}_" "$m" 2>/dev/null) || n=0
+          if [ "$n" -lt 2 ]; then
+            scripts/gentoo-manifest.sh
+            echo "repaired=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Push to a staging branch
+        id: push
+        if: steps.bump.outputs.changed == 'true' || steps.manifest.outputs.repaired == 'true'
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$VERSION" ]; then
+            msg="Update Claude Desktop to $VERSION"; branch="auto/v$VERSION"
+          else
+            msg="Regenerate Gentoo Manifest"; branch="auto/manifest-$GITHUB_RUN_ID"
+          fi
+          git add -A
+          git commit -m "$msg"
+          git push --force origin "HEAD:refs/heads/$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: bump
+    if: needs.bump.outputs.branch != ''
+    uses: ./.github/workflows/test.yml
+    with:
+      ref: ${{ needs.bump.outputs.branch }}
+
+  publish:
+    needs: [bump, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fast-forward main and tag
+        env:
+          BRANCH: ${{ needs.bump.outputs.branch }}
+          VERSION: ${{ needs.bump.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin "$BRANCH"
+          git merge --ff-only FETCH_HEAD
+          git push origin HEAD:main
+          if [ -n "$VERSION" ]; then
+            git tag "v$VERSION-1"
+            git push origin "v$VERSION-1"
+            gh release create "v$VERSION-1" --title "Claude Desktop $VERSION" \
+              --notes "Recipes updated to Claude Desktop $VERSION (verified against Anthropic's signed apt index). No binaries are attached: build with the instructions in the README."
+          fi
+          git push origin --delete "$BRANCH"
+
+  overlay:
+    needs: publish
+    uses: ./.github/workflows/overlay.yml

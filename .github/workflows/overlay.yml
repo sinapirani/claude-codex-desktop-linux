@@ -1,0 +1,29 @@
+name: gentoo-overlay
+
+# Publish gentoo/ as the root of the `gentoo-overlay` branch, the layout Portage
+# needs to sync this repo as an overlay.
+on:
+  push:
+    branches: [main]
+    paths: ["gentoo/**"]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gentoo-overlay
+  cancel-in-progress: false
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Push gentoo/ subtree to gentoo-overlay
+        run: |
+          git push --force origin "$(git subtree split --prefix gentoo HEAD):refs/heads/gentoo-overlay"
