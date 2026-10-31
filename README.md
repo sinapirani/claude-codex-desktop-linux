@@ -47,6 +47,7 @@ Cowork: `sudo pacman -S qemu-system-x86 edk2-ovmf` (on ARM: `qemu-system-aarch64
 sudo dnf install rpm-build binutils git
 git clone https://github.com/sinapirani/claude-desktop-linux
 cd claude-desktop-linux
+mkdir -p rpmbuild/SOURCES
 rpmbuild -bb --undefine=_disable_source_fetch --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
 sudo dnf install ./rpmbuild/RPMS/$(uname -m)/claude-desktop-*.rpm
 ```
@@ -59,6 +60,7 @@ Cowork: `sudo dnf install qemu-system-x86-core edk2-ovmf` (ARM: `qemu-system-aar
 sudo zypper install rpm-build binutils git
 git clone https://github.com/sinapirani/claude-desktop-linux
 cd claude-desktop-linux
+mkdir -p rpmbuild/SOURCES
 rpmbuild -bb --undefine=_disable_source_fetch --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
 sudo zypper install --allow-unsigned-rpm ./rpmbuild/RPMS/$(uname -m)/claude-desktop-*.rpm
 ```

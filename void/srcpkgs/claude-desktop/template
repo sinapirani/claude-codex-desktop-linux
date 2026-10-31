@@ -31,6 +31,8 @@ repository=nonfree
 restricted=yes
 nostrip=yes
 nopie=yes
+# the .deb has a single top-level usr/; keep it instead of stripping it
+create_wrksrc=yes
 
 do_install() {
 	vcopy usr /

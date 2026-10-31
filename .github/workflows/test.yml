@@ -73,6 +73,7 @@ jobs:
       - name: Build RPM
         run: |
           dnf -y install rpm-build binutils tar xz zstd file findutils curl
+          mkdir -p rpmbuild/SOURCES
           rpmbuild -bb --undefine=_disable_source_fetch \
             --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
       - name: Install
@@ -89,6 +90,7 @@ jobs:
       - name: Build and install RPM
         run: |
           dnf -y install rpm-build binutils tar xz zstd file findutils
+          mkdir -p rpmbuild/SOURCES
           rpmbuild -bb --undefine=_disable_source_fetch \
             --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
           dnf -y install ./rpmbuild/RPMS/x86_64/claude-desktop-*.rpm
@@ -106,6 +108,7 @@ jobs:
       - name: Build RPM
         run: |
           zypper -n install rpm-build binutils xz zstd file findutils curl
+          mkdir -p rpmbuild/SOURCES
           rpmbuild -bb --undefine=_disable_source_fetch \
             --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
       - name: Install

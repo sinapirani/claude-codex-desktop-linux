@@ -3,7 +3,7 @@
 # Anthropic's apt repository; the checksums are taken from its GPG-signed
 # index by scripts/upstream.sh.
 #
-# Build:  rpmbuild -bb --undefine=_disable_source_fetch claude-desktop.spec
+# Build:  mkdir -p rpmbuild/SOURCES && rpmbuild -bb --undefine=_disable_source_fetch claude-desktop.spec
 
 %global sha256_x86_64  4fcf658e0fc895390ab82593287281dfbce261b0ec3ea90060e82d8bfbfd7a84
 %global sha256_aarch64 7022dc56de30e0beb7fa0a7dc84e09aa00d7f9d4e1b7f93043b32baf75a2f6d8
