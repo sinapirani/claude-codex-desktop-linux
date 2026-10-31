@@ -24,7 +24,43 @@ against a SHA256 taken from Anthropic's GPG-signed apt index (see
 Requirements: x86_64 or aarch64, glibc 2.34 or newer (Anthropic publishes
 only these two architectures).
 
-## Install
+## Quick install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sinapirani/claude-desktop-linux/main/install.sh | bash
+```
+
+The script detects your distro, shows what it will do, and asks before
+changing anything. It picks:
+
+| Your system | What it does |
+|---|---|
+| Arch, Manjaro, EndeavourOS, CachyOS, Garuda, Artix | builds the PKGBUILD and installs it with pacman |
+| Fedora, RHEL / Alma / Rocky 9+ | builds the RPM and installs it with dnf |
+| openSUSE | builds the RPM and installs it with zypper |
+| Gentoo | adds the overlay and emerges `app-misc/claude-desktop` |
+| Void (glibc) | builds the template with xbps-src and installs it |
+| Debian, Ubuntu, Mint, Pop!_OS | installs Anthropic's official `.deb` (updates then come through apt) |
+| Silverblue, Bazzite, anything else | builds an AppImage and adds it to your app menu |
+
+Options go after `bash -s --`, for example
+`curl -fsSL …/install.sh | bash -s -- --cowork`:
+
+| Option | |
+|---|---|
+| `--cowork` | also install QEMU + UEFI firmware for Cowork (local VM) |
+| `--method M` | force `arch`, `rpm`, `gentoo`, `void`, `deb` or `appimage` |
+| `--dry-run` | print the plan and commands, change nothing |
+| `--uninstall` | remove it again |
+| `--yes` | don't ask for confirmation |
+
+Run it again to update. Run it as your normal user (it uses `sudo` where
+needed; `makepkg` and `xbps-src` refuse to run as root).
+
+## Manual install
+
+The script just automates these steps.
+
 
 All recipes download about 170 MB from `downloads.claude.ai` while building.
 **Cowork** (Claude's local VM feature) also needs QEMU and UEFI firmware;

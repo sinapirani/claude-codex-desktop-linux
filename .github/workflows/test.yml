@@ -206,3 +206,63 @@ jobs:
           tail -n 30 app.log
           # 124 = still running when timeout killed it (good)
           test "$rc" = 124
+
+  # ---- install.sh, end to end, as a user would run it ----------------------
+  install-script:
+    name: install.sh on ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Arch,       image: "archlinux:base-devel",  user: builder, prep: "pacman -Syu --noconfirm sudo file" }
+          - { name: Fedora,     image: "fedora:latest",         prep: "dnf -y install file findutils" }
+          - { name: AlmaLinux 9, image: "almalinux:9",          prep: "dnf -y install file findutils", nocowork: true }
+          - { name: openSUSE,   image: "opensuse/tumbleweed",   prep: "zypper -n install tar gzip curl file findutils" }
+          - { name: Ubuntu 24.04, image: "ubuntu:24.04",        prep: "apt-get update && apt-get install -y curl ca-certificates file" }
+          - { name: Debian 12,  image: "debian:12",             prep: "apt-get update && apt-get install -y curl ca-certificates file" }
+          - { name: Void,       image: "ghcr.io/void-linux/void-glibc-full", user: builder, privileged: true,
+              prep: "xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash curl git file" }
+          - { name: Gentoo (dry run), image: "gentoo/stage3:latest", dry: true, prep: "true" }
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      options: ${{ matrix.privileged && '--privileged' || '' }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Prepare container
+        run: ${{ matrix.prep }}
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - name: Create sudo user
+        if: matrix.user
+        run: |
+          useradd -m ${{ matrix.user }} ${{ matrix.name == 'Void' && '-G xbuilder' || '' }}
+          echo '${{ matrix.user }} ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/${{ matrix.user }}
+          chown -R ${{ matrix.user }} .
+      - name: Run install.sh
+        env:
+          ARGS: ${{ matrix.dry && '--dry-run' || '' }} ${{ !matrix.nocowork && '--cowork' || '' }}
+          AS: ${{ matrix.user }}
+        run: |
+          if [ -n "$AS" ]; then sudo -u "$AS" -H ./install.sh --yes $ARGS
+          else ./install.sh --yes $ARGS; fi
+      - name: Check
+        if: ${{ !matrix.dry }}
+        env:
+          CHECK_FIRMWARE: ${{ !matrix.nocowork && '1' || '0' }}
+        run: tests/check-install.sh
+
+  install-script-appimage:
+    name: install.sh --method appimage (Ubuntu runner, normal user)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.REF }}" }
+      - run: ./install.sh --yes --method appimage
+      - name: Check
+        run: |
+          test -x ~/.local/share/claude-desktop/Claude.AppImage
+          grep -q "^Exec=\"$HOME/.local/share/claude-desktop/Claude.AppImage\"" ~/.local/share/applications/com.anthropic.Claude.desktop
+          test -f ~/.local/share/icons/hicolor/256x256/apps/claude-desktop.png
+      - run: ./install.sh --yes --method appimage --uninstall && test ! -e ~/.local/share/claude-desktop/Claude.AppImage
