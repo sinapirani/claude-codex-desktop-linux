@@ -244,8 +244,10 @@ jobs:
         env:
           ARGS: ${{ matrix.dry && '--dry-run' || '' }} ${{ !matrix.nocowork && '--cowork' || '' }}
           AS: ${{ matrix.user }}
+          # Void in Docker: user namespaces are blocked, use the setuid chroot
+          XBPS_CHROOT_CMD: ${{ matrix.name == 'Void' && 'uchroot' || '' }}
         run: |
-          if [ -n "$AS" ]; then sudo -u "$AS" -H ./install.sh --yes $ARGS
+          if [ -n "$AS" ]; then sudo -u "$AS" -H --preserve-env=XBPS_CHROOT_CMD ./install.sh --yes $ARGS
           else ./install.sh --yes $ARGS; fi
       - name: Check
         if: ${{ !matrix.dry }}

@@ -95,7 +95,8 @@ esac
 ID=${ID:-unknown}; ID_LIKE=${ID_LIKE:-}
 ids=" $ID $ID_LIKE "
 
-glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}' || true)
+glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null || true)   # "glibc 2.39"
+glibc=${glibc#glibc }
 if [[ -z "$glibc" ]]; then
   die "no glibc found (musl-based distros like Alpine or Void-musl can't run the official build)"
 fi
@@ -147,6 +148,13 @@ if (( ! yes && ! dry )); then
     die "no terminal to confirm on; re-run with --yes"
   fi
 fi
+
+# Packages to install for the commands that are missing: missing_pkgs cmd=pkg ...
+missing_pkgs() {
+  local pair out=()
+  for pair; do command -v "${pair%%=*}" >/dev/null || out+=("${pair#*=}"); done
+  echo "${out[*]}"
+}
 
 # ---------- uninstall --------------------------------------------------------
 appimage_path="$HOME/.local/share/claude-desktop/Claude.AppImage"
@@ -217,10 +225,10 @@ arch)
   ;;
 
 rpm)
-  if [[ $pm == zypper ]]; then
-    root zypper -n install rpm-build binutils tar xz zstd curl
-  else
-    root dnf -y install rpm-build binutils tar xz zstd curl
+  need=$(missing_pkgs rpmbuild=rpm-build ar=binutils tar=tar xz=xz zstd=zstd curl=curl)
+  if [[ -n $need ]]; then
+    # shellcheck disable=SC2086
+    if [[ $pm == zypper ]]; then root zypper -n install $need; else root dnf -y install $need; fi
   fi
   fetch_deb
   top="$work/rpmbuild"
@@ -279,12 +287,18 @@ gentoo)
 
 void)
   (( EUID != 0 )) || die "xbps-src should run as a normal user; run this script as your normal user"
-  root xbps-install -Sy git bash curl
+  need=$(missing_pkgs git=git curl=curl)
+  # shellcheck disable=SC2086
+  [[ -z $need ]] || root xbps-install -Sy $need
   vp="$CACHE/void-packages"
   if [[ -d $vp/.git ]]; then run git -C "$vp" pull --ff-only --depth 1
   else run git clone --depth 1 https://github.com/void-linux/void-packages "$vp"; fi
   if (( ! dry )) && ! grep -qs '^XBPS_ALLOW_RESTRICTED=yes' "$vp/etc/conf"; then
     echo XBPS_ALLOW_RESTRICTED=yes >> "$vp/etc/conf"
+  fi
+  # Containers without user namespaces: XBPS_CHROOT_CMD=uchroot ./install.sh
+  if (( ! dry )) && [[ -n "${XBPS_CHROOT_CMD:-}" ]] && ! grep -qs "^XBPS_CHROOT_CMD=$XBPS_CHROOT_CMD" "$vp/etc/conf"; then
+    echo "XBPS_CHROOT_CMD=$XBPS_CHROOT_CMD" >> "$vp/etc/conf"
   fi
   run rm -rf "$vp/srcpkgs/claude-desktop"
   run cp -r "$src/void/srcpkgs/claude-desktop" "$vp/srcpkgs/"
