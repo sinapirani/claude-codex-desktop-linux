@@ -12,7 +12,7 @@ inherit optfeature unpacker xdg
 _REPO="https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop"
 
 DESCRIPTION="Desktop application for Claude.ai (official build, repackaged)"
-HOMEPAGE="https://claude.ai/download https://github.com/sinapirani/claude-desktop-linux"
+HOMEPAGE="https://claude.ai/download https://github.com/sinapirani/claude-codex-desktop-linux"
 SRC_URI="
 	amd64? ( ${_REPO}/claude-desktop_${PV}_amd64.deb )
 	arm64? ( ${_REPO}/claude-desktop_${PV}_arm64.deb )

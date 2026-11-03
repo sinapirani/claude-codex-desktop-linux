@@ -9,6 +9,6 @@
 		<flag name="suid">Install chrome-sandbox setuid root (only needed where unprivileged user namespaces are disabled)</flag>
 	</use>
 	<upstream>
-		<remote-id type="github">sinapirani/claude-desktop-linux</remote-id>
+		<remote-id type="github">sinapirani/claude-codex-desktop-linux</remote-id>
 	</upstream>
 </pkgmetadata>
