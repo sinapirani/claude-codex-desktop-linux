@@ -1,6 +1,7 @@
 name: test
 
-# Build every recipe in its own distro, install the result and check it.
+# Build every recipe of both apps in its own distro, install the result and
+# check it.
 on:
   push:
     branches: [main]
@@ -21,21 +22,32 @@ env:
 
 jobs:
   upstream:
-    name: upstream index signature
+    name: upstream index signature (${{ matrix.app }})
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [claude-desktop, chatgpt]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ env.REF }}" }
-      - name: upstream.env matches Anthropic's signed index
+      - name: upstream/${{ matrix.app }}.env matches the vendor's signed index
         run: |
-          . ./upstream.env
-          scripts/upstream.sh "$VERSION" | grep -v '^#' > /tmp/expected
-          grep -v '^#' upstream.env | diff -u /tmp/expected -
+          . ./upstream/${{ matrix.app }}.env
+          scripts/upstream.sh ${{ matrix.app }} "$VERSION" | grep -v '^#' > /tmp/expected
+          grep -v '^#' upstream/${{ matrix.app }}.env | diff -u /tmp/expected -
 
   arch:
-    name: Arch (x86_64 install + aarch64 package)
+    name: Arch ${{ matrix.app }} (x86_64 install + aarch64 package)
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [claude-desktop, chatgpt]
     runs-on: ubuntu-latest
     container: archlinux:base-devel
+    env:
+      APP: ${{ matrix.app }}
+      COWORK: ${{ matrix.app == 'claude-desktop' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ env.REF }}" }
@@ -45,28 +57,42 @@ jobs:
           useradd -m builder
           echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
           chown -R builder .
-          (cd arch && sudo -u builder makepkg --noconfirm --syncdeps)
-          pacman -U --noconfirm arch/claude-desktop-*-x86_64.pkg.tar.zst
-          pacman -S --noconfirm --needed qemu-system-x86 edk2-ovmf
-      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+          (cd arch/$APP && sudo -u builder makepkg --noconfirm --syncdeps)
+          pacman -U --noconfirm arch/$APP/$APP-*-x86_64.pkg.tar.zst
+          if [ "$COWORK" = 1 ]; then pacman -S --noconfirm --needed qemu-system-x86 edk2-ovmf; fi
+          # free space for the aarch64 package (Codex unpacks to ~1.7 GB)
+          rm -rf arch/$APP/src arch/$APP/pkg arch/$APP/*-x86_64.pkg.tar.zst arch/$APP/*-amd64.deb
+      - run: CHECK_FIRMWARE=$COWORK tests/check-install.sh
       - name: Package aarch64 (repackaging only, so it builds on x86_64)
         run: |
           sed -e 's/^CARCH=.*/CARCH="aarch64"/' \
               -e 's/^CHOST=.*/CHOST="aarch64-unknown-linux-gnu"/' \
               /etc/makepkg.conf > /tmp/makepkg-aarch64.conf
-          (cd arch && sudo -u builder makepkg --config /tmp/makepkg-aarch64.conf --nodeps --noconfirm -f)
-          mkdir /tmp/a && bsdtar -xf arch/claude-desktop-*-aarch64.pkg.tar.zst -C /tmp/a
+          (cd arch/$APP && sudo -u builder makepkg --config /tmp/makepkg-aarch64.conf --nodeps --noconfirm -f)
+          mkdir /tmp/a && bsdtar -xf arch/$APP/$APP-*-aarch64.pkg.tar.zst -C /tmp/a
           CHECK_LIBS=0 tests/check-install.sh /tmp/a
-          file -L /tmp/a/usr/lib/claude-desktop/claude-desktop | grep -q aarch64
-          # edk2-aarch64 must provide the AAVMF paths Cowork needs
+          case $APP in
+            claude-desktop) file -L /tmp/a/usr/lib/claude-desktop/claude-desktop | grep -q aarch64 ;;
+            chatgpt)        file -L /tmp/a/usr/lib/chatgpt/ChatGPT | grep -q aarch64 ;;
+          esac
+      - name: edk2-aarch64 provides the AAVMF paths Cowork needs
+        if: matrix.app == 'claude-desktop'
+        run: |
           pacman -Fy >/dev/null
           pacman -Fl edk2-aarch64 | grep -q 'usr/share/AAVMF/AAVMF_CODE.fd'
           pacman -Fl edk2-aarch64 | grep -q 'usr/share/AAVMF/AAVMF_VARS.fd'
 
   fedora:
-    name: Fedora
+    name: Fedora ${{ matrix.app }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [claude-desktop, chatgpt]
     runs-on: ubuntu-latest
     container: fedora:latest
+    env:
+      APP: ${{ matrix.app }}
+      COWORK: ${{ matrix.app == 'claude-desktop' && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ env.REF }}" }
@@ -75,15 +101,24 @@ jobs:
           dnf -y install rpm-build binutils tar xz zstd file findutils curl
           mkdir -p rpmbuild/SOURCES
           rpmbuild -bb --undefine=_disable_source_fetch \
-            --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
+            --define "_topdir $PWD/rpmbuild" rpm/$APP.spec
+          rm -rf rpmbuild/BUILD rpmbuild/BUILDROOT rpmbuild/SOURCES/*.deb
       - name: Install
-        run: dnf -y install ./rpmbuild/RPMS/x86_64/claude-desktop-*.rpm qemu-system-x86-core edk2-ovmf
-      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+        run: |
+          extra=""; [ "$COWORK" = 1 ] && extra="qemu-system-x86-core edk2-ovmf"
+          dnf -y install ./rpmbuild/RPMS/x86_64/$APP-*.rpm $extra
+      - run: CHECK_FIRMWARE=$COWORK tests/check-install.sh
 
   el9:
-    name: AlmaLinux 9 (RHEL 9)
+    name: AlmaLinux 9 (RHEL 9) ${{ matrix.app }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [claude-desktop, chatgpt]
     runs-on: ubuntu-latest
     container: almalinux:9
+    env:
+      APP: ${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ env.REF }}" }
@@ -92,14 +127,22 @@ jobs:
           dnf -y install rpm-build binutils tar xz zstd file findutils
           mkdir -p rpmbuild/SOURCES
           rpmbuild -bb --undefine=_disable_source_fetch \
-            --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
-          dnf -y install ./rpmbuild/RPMS/x86_64/claude-desktop-*.rpm
+            --define "_topdir $PWD/rpmbuild" rpm/$APP.spec
+          rm -rf rpmbuild/BUILD rpmbuild/BUILDROOT rpmbuild/SOURCES/*.deb
+          dnf -y install ./rpmbuild/RPMS/x86_64/$APP-*.rpm
       - run: tests/check-install.sh
 
   opensuse:
-    name: openSUSE Tumbleweed
+    name: openSUSE Tumbleweed ${{ matrix.app }}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [claude-desktop, chatgpt]
     runs-on: ubuntu-latest
     container: opensuse/tumbleweed
+    env:
+      APP: ${{ matrix.app }}
+      COWORK: ${{ matrix.app == 'claude-desktop' && '1' || '0' }}
     steps:
       - name: Prepare (checkout needs tar + gzip)
         run: zypper -n install tar gzip
@@ -110,18 +153,25 @@ jobs:
           zypper -n install rpm-build binutils xz zstd file findutils curl
           mkdir -p rpmbuild/SOURCES
           rpmbuild -bb --undefine=_disable_source_fetch \
-            --define "_topdir $PWD/rpmbuild" rpm/claude-desktop.spec
+            --define "_topdir $PWD/rpmbuild" rpm/$APP.spec
+          rm -rf rpmbuild/BUILD rpmbuild/BUILDROOT rpmbuild/SOURCES/*.deb
       - name: Install
         run: |
+          extra=""; [ "$COWORK" = 1 ] && extra="qemu-x86 qemu-ovmf-x86_64"
           zypper -n --no-gpg-checks install --allow-unsigned-rpm \
-            ./rpmbuild/RPMS/x86_64/claude-desktop-*.rpm qemu-x86 qemu-ovmf-x86_64
-      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+            ./rpmbuild/RPMS/x86_64/$APP-*.rpm $extra
+      - run: CHECK_FIRMWARE=$COWORK tests/check-install.sh
 
   gentoo:
-    name: Gentoo (ebuild install)
+    name: Gentoo ${{ matrix.app }} (ebuild install)
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [claude-desktop, chatgpt]
     runs-on: ubuntu-latest
     container: gentoo/stage3:latest
     env:
+      APP: ${{ matrix.app }}
       FEATURES: -sandbox -usersandbox -ipc-sandbox -network-sandbox -pid-sandbox
     steps:
       - uses: actions/checkout@v4
@@ -134,24 +184,34 @@ jobs:
             > /etc/portage/repos.conf/claude-desktop-linux.conf
       - name: Fetch (verifies Manifest) and install into the image dir
         run: |
-          cd gentoo/app-misc/claude-desktop
-          ebuild claude-desktop-*.ebuild clean fetch install
+          cd gentoo/app-misc/$APP
+          ebuild $APP-*.ebuild clean fetch install
       - name: Check image
         run: |
-          img=$(echo /var/tmp/portage/app-misc/claude-desktop-*/image)
+          img=$(echo /var/tmp/portage/app-misc/$APP-*/image)
           CHECK_LIBS=0 tests/check-install.sh "$img"
-          # the firmware links must point at files sys-firmware/edk2-bin installs
+      - name: Cowork firmware links point at files sys-firmware/edk2-bin installs
+        if: matrix.app == 'claude-desktop'
+        run: |
+          img=$(echo /var/tmp/portage/app-misc/$APP-*/image)
           for f in OVMF_CODE.fd OVMF_VARS.fd; do
             readlink "$img/usr/share/OVMF/$f"
           done
           grep -rhoE 'OvmfX64' /var/db/repos/gentoo/sys-firmware/edk2-bin/*.ebuild | head -1 | grep -q OvmfX64
 
   void:
-    name: Void (xbps-src)
+    name: Void ${{ matrix.app }} (xbps-src)
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [claude-desktop, chatgpt]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/void-linux/void-glibc-full
       options: --privileged
+    env:
+      APP: ${{ matrix.app }}
+      COWORK: ${{ matrix.app == 'claude-desktop' && '1' || '0' }}
     steps:
       - name: Prepare container
         run: |
@@ -163,45 +223,51 @@ jobs:
       - name: Build with xbps-src
         run: |
           git clone --depth 1 https://github.com/void-linux/void-packages /tmp/vp
-          cp -r void/srcpkgs/claude-desktop /tmp/vp/srcpkgs/
+          cp -r void/srcpkgs/$APP /tmp/vp/srcpkgs/
           chown -R builder:builder /tmp/vp
           cd /tmp/vp
           echo XBPS_ALLOW_RESTRICTED=yes >> etc/conf
           echo XBPS_CHROOT_CMD=uchroot >> etc/conf
           sudo -Eu builder ./xbps-src binary-bootstrap
-          sudo -Eu builder ./xbps-src pkg claude-desktop
+          sudo -Eu builder ./xbps-src pkg $APP
       - name: Install
         run: |
-          xbps-install -y --repository=/tmp/vp/hostdir/binpkgs/nonfree claude-desktop
-          xbps-install -y qemu-system-amd64 edk2-ovmf
-      - run: CHECK_FIRMWARE=1 tests/check-install.sh
+          xbps-install -y --repository=/tmp/vp/hostdir/binpkgs/nonfree $APP
+          if [ "$COWORK" = 1 ]; then xbps-install -y qemu-system-amd64 edk2-ovmf; fi
+      - run: CHECK_FIRMWARE=$COWORK tests/check-install.sh
 
   appimage:
-    name: AppImage (${{ matrix.arch }})
+    name: AppImage ${{ matrix.app }} (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
+        app: [claude-desktop, chatgpt]
+        arch: [x86_64, aarch64]
         include:
           - { arch: x86_64,  runner: ubuntu-24.04 }
           - { arch: aarch64, runner: ubuntu-24.04-arm }
+          - { app: claude-desktop, label: Claude, exe: usr/lib/claude-desktop/claude-desktop, desktop: com.anthropic.Claude.desktop }
+          - { app: chatgpt, label: ChatGPT, exe: usr/lib/chatgpt/ChatGPT, desktop: chatgpt.desktop }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ env.REF }}" }
       - name: Build
-        run: appimage/build-appimage.sh ${{ matrix.arch }} --out out
+        run: appimage/build-appimage.sh --app ${{ matrix.app }} ${{ matrix.arch }} --out out
       - name: Check
         run: |
-          cd out && ./Claude-*-${{ matrix.arch }}.AppImage --appimage-extract >/dev/null
+          cd out && ./${{ matrix.label }}-*-${{ matrix.arch }}.AppImage --appimage-extract >/dev/null
           test -x squashfs-root/AppRun
-          test -x squashfs-root/usr/lib/claude-desktop/claude-desktop
-          grep -q '^Exec=AppRun' squashfs-root/com.anthropic.Claude.desktop
+          test -x squashfs-root/${{ matrix.exe }}
+          grep -q '^Exec=AppRun' squashfs-root/${{ matrix.desktop }}
+          rm -rf squashfs-root
       - name: Smoke test (starts under Xvfb and stays up for 20s)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libnotify4 libsecret-1-0 libxtst6
+          sudo apt-get install -y -qq xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libnotify4 libsecret-1-0 libxtst6 \
+            libcups2t64 libtss2-esys-3.0.2-0t64 libtss2-tcti-device0t64 libusb-1.0-0
           set +e
-          timeout 20 xvfb-run -a out/Claude-*-${{ matrix.arch }}.AppImage --appimage-extract-and-run > app.log 2>&1
+          timeout 20 xvfb-run -a out/${{ matrix.label }}-*-${{ matrix.arch }}.AppImage --appimage-extract-and-run > app.log 2>&1
           rc=$?
           tail -n 30 app.log
           # 124 = still running when timeout killed it (good)
@@ -209,10 +275,12 @@ jobs:
 
   # ---- install.sh, end to end, as a user would run it ----------------------
   install-script:
-    name: install.sh on ${{ matrix.name }}
+    name: install.sh --app ${{ matrix.app }} on ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
+        app: [claude, codex]
+        name: [Arch, Fedora, AlmaLinux 9, openSUSE, Ubuntu 24.04, Debian 12, Void, Gentoo (dry run)]
         include:
           - { name: Arch,       image: "archlinux:base-devel",  user: builder, prep: "pacman -Syu --noconfirm sudo file" }
           - { name: Fedora,     image: "fedora:latest",         prep: "dnf -y install file findutils" }
@@ -223,12 +291,15 @@ jobs:
           - { name: Void,       image: "ghcr.io/void-linux/void-glibc-full", user: builder, privileged: true,
               prep: "xbps-install -Syu xbps && xbps-install -yu && xbps-install -y sudo bash curl git file" }
           - { name: Gentoo (dry run), image: "gentoo/stage3:latest", dry: true, prep: "true" }
+          - { app: claude, pkg: claude-desktop }
+          - { app: codex,  pkg: chatgpt }
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
       options: ${{ matrix.privileged && '--privileged' || '' }}
     env:
       DEBIAN_FRONTEND: noninteractive
+      COWORK: ${{ matrix.app == 'claude' && !matrix.nocowork && '1' || '0' }}
     steps:
       - name: Prepare container
         run: ${{ matrix.prep }}
@@ -242,29 +313,41 @@ jobs:
           chown -R ${{ matrix.user }} .
       - name: Run install.sh
         env:
-          ARGS: ${{ matrix.dry && '--dry-run' || '' }} ${{ !matrix.nocowork && '--cowork' || '' }}
+          ARGS: --app ${{ matrix.app }} ${{ matrix.dry && '--dry-run' || '' }}
           AS: ${{ matrix.user }}
           # Void in Docker: user namespaces are blocked, use the setuid chroot
           XBPS_CHROOT_CMD: ${{ matrix.name == 'Void' && 'uchroot' || '' }}
         run: |
+          [ "$COWORK" = 1 ] && ARGS="$ARGS --cowork"
           if [ -n "$AS" ]; then sudo -u "$AS" -H --preserve-env=XBPS_CHROOT_CMD ./install.sh --yes $ARGS
           else ./install.sh --yes $ARGS; fi
       - name: Check
         if: ${{ !matrix.dry }}
         env:
-          CHECK_FIRMWARE: ${{ !matrix.nocowork && '1' || '0' }}
+          APP: ${{ matrix.pkg }}
+          CHECK_FIRMWARE: ${{ env.COWORK }}
         run: tests/check-install.sh
 
   install-script-appimage:
-    name: install.sh --method appimage (Ubuntu runner, normal user)
+    name: install.sh --app ${{ matrix.app }} --method appimage (Ubuntu runner, normal user)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: claude, dir: claude-desktop, file: Claude.AppImage, desktop: com.anthropic.Claude.desktop,
+              icon: ".local/share/icons/hicolor/256x256/apps/claude-desktop.png" }
+          - { app: codex, dir: chatgpt, file: ChatGPT.AppImage, desktop: chatgpt.desktop,
+              icon: ".local/share/chatgpt/chatgpt.png" }
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ env.REF }}" }
-      - run: ./install.sh --yes --method appimage
+      - run: ./install.sh --yes --app ${{ matrix.app }} --method appimage
       - name: Check
         run: |
-          test -x ~/.local/share/claude-desktop/Claude.AppImage
-          grep -q "^Exec=\"$HOME/.local/share/claude-desktop/Claude.AppImage\"" ~/.local/share/applications/com.anthropic.Claude.desktop
-          test -f ~/.local/share/icons/hicolor/256x256/apps/claude-desktop.png
-      - run: ./install.sh --yes --method appimage --uninstall && test ! -e ~/.local/share/claude-desktop/Claude.AppImage
+          test -x ~/.local/share/${{ matrix.dir }}/${{ matrix.file }}
+          grep -q "^Exec=\"$HOME/.local/share/${{ matrix.dir }}/${{ matrix.file }}\"" ~/.local/share/applications/${{ matrix.desktop }}
+          test -f ~/${{ matrix.icon }}
+      - run: |
+          ./install.sh --yes --app ${{ matrix.app }} --method appimage --uninstall
+          test ! -e ~/.local/share/${{ matrix.dir }}/${{ matrix.file }}

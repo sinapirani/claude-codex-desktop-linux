@@ -1,15 +1,16 @@
 #!/bin/sh
-# AppRun for the Claude Desktop AppImage.
+# AppRun for the AppImages built by build-appimage.sh, which fills in the
+# app's main binary (relative to the AppDir) and its name below.
 HERE=$(dirname "$(readlink -f "$0")")
-APP="$HERE/usr/lib/claude-desktop/claude-desktop"
+APP="$HERE/@EXEC@"
 
 # AppImages are mounted nosuid, so Chromium's SUID sandbox helper can never
 # work from here. The namespace sandbox works wherever unprivileged user
 # namespaces are allowed (most distros). Where they are not (e.g. Ubuntu 24.04+
 # AppArmor userns restriction, hardened kernels), fall back to --no-sandbox
 # and say so, instead of crashing at startup.
-if [ -z "$CLAUDE_APPIMAGE_FORCE_SANDBOX" ] && ! unshare --user --map-root-user true 2>/dev/null; then
-  echo "claude-desktop AppImage: unprivileged user namespaces are unavailable;" \
+if [ -z "${APPIMAGE_FORCE_SANDBOX:-$CLAUDE_APPIMAGE_FORCE_SANDBOX}" ] && ! unshare --user --map-root-user true 2>/dev/null; then
+  echo "@NAME@ AppImage: unprivileged user namespaces are unavailable;" \
        "starting with --no-sandbox (install a native package to keep the sandbox)." >&2
   set -- --no-sandbox "$@"
 fi

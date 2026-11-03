@@ -1,0 +1,50 @@
+# Template file for 'chatgpt'
+# Repackages OpenAI's official Codex desktop app .deb; checksums come from
+# OpenAI's GPG-signed apt index (github.com/sinapirani/claude-codex-desktop-linux).
+pkgname=chatgpt
+version=26.1027.51404
+revision=1
+archs="x86_64 aarch64"
+depends="alsa-lib atk at-spi2-atk at-spi2-core cairo dbus-libs eudev-libudev
+ expat gdk-pixbuf glib gtk+3 libcrypto3 libcups libgbm libGL libnotify libusb
+ libX11 libxcb libXcomposite libXdamage libXext libXfixes libxkbcommon
+ libXrandr nspr nss pango tpm2-tss xdg-utils xz"
+short_desc="Codex desktop app by OpenAI (official ChatGPT build, repackaged)"
+maintainer="Sina Pirani <sinapiranidev@gmail.com>"
+license="custom:Proprietary"
+homepage="https://developers.openai.com/codex/app"
+_repo="https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt"
+
+case "$XBPS_TARGET_MACHINE" in
+x86_64)
+	distfiles="${_repo}/chatgpt_${version}_amd64.deb"
+	checksum=46f1e22d028698fe9edaefd5847aece07c4509a30d3709e104220719d8c12822
+	;;
+aarch64)
+	distfiles="${_repo}/chatgpt_${version}_arm64.deb"
+	checksum=2c2ba5cd2f5c13de5f5d93a5e1623fbb61ea4b3556571e5f7431a570f17f8fea
+	;;
+*)
+	broken="No distfiles available for this target"
+	;;
+esac
+
+repository=nonfree
+restricted=yes
+nostrip=yes
+nopie=yes
+# The bundle carries prebuilt Node modules for other platforms (musl, Android,
+# ARM) and optional Qt shims; their sonames must not become dependencies, and
+# its private libraries must not be offered to other packages. The runtime
+# dependencies are listed above instead.
+noverifyrdeps=yes
+noshlibprovides=yes
+# the .deb has a single top-level usr/ (+ etc/); keep it instead of stripping it
+create_wrksrc=yes
+
+do_install() {
+	# Only usr/: etc/ holds just an AppArmor profile for Ubuntu.
+	vcopy usr /
+	rm -rf ${DESTDIR}/usr/share/lintian ${DESTDIR}/usr/share/doc
+	vlicense usr/share/doc/chatgpt/copyright
+}

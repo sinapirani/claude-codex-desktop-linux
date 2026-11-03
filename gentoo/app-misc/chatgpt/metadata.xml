@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>sinapiranidev@gmail.com</email>
+		<name>Sina Pirani</name>
+	</maintainer>
+	<upstream>
+		<remote-id type="github">sinapirani/claude-codex-desktop-linux</remote-id>
+	</upstream>
+</pkgmetadata>

@@ -1,36 +1,61 @@
 #!/usr/bin/env bash
-# Sanity-check an installed (or unpacked) Claude Desktop tree. Used by CI after
+# Sanity-check an installed (or unpacked) app tree. Used by CI after
 # installing each distro's package.
 #
 # Usage: tests/check-install.sh [ROOT]          (default ROOT=/)
+#   APP=chatgpt       check Codex (default: claude-desktop)
 #   CHECK_LIBS=0      skip the "every shared library resolves" check
 #   CHECK_FIRMWARE=1  also require Cowork's QEMU + UEFI firmware paths to resolve
+#                     (Claude Desktop only)
 set -uo pipefail
 root=${1:-/}
 root=${root%/}
-lib="$root/usr/lib/claude-desktop"
+app=${APP:-claude-desktop}
 fail=0
 ok()  { echo "  ok   $*"; }
 bad() { echo "  FAIL $*"; fail=1; }
 
-echo "== files"
-for f in usr/bin/claude-desktop \
-         usr/lib/claude-desktop/claude-desktop \
-         usr/lib/claude-desktop/resources/app.asar \
-         usr/share/applications/com.anthropic.Claude.desktop \
-         usr/share/icons/hicolor/256x256/apps/claude-desktop.png \
-         usr/share/mime/packages/com.anthropic.Claude.xml; do
+# files: must exist   exe: main binary   skip: find(1) -path patterns of bundled
+# files that may legitimately have unresolved libraries
+skip=()
+case "$app" in
+  claude|claude-desktop)
+    lib="$root/usr/lib/claude-desktop"
+    exe=usr/lib/claude-desktop/claude-desktop
+    files=(usr/bin/claude-desktop "$exe"
+           usr/lib/claude-desktop/resources/app.asar
+           usr/share/applications/com.anthropic.Claude.desktop
+           usr/share/icons/hicolor/256x256/apps/claude-desktop.png
+           usr/share/mime/packages/com.anthropic.Claude.xml) ;;
+  codex|chatgpt)
+    lib="$root/usr/lib/chatgpt"
+    exe=usr/lib/chatgpt/ChatGPT
+    files=(usr/bin/chatgpt "$exe"
+           usr/lib/chatgpt/resources/app.asar
+           usr/lib/chatgpt/resources/codex
+           usr/share/applications/chatgpt.desktop
+           usr/share/pixmaps/chatgpt.png)
+    # Chromium's optional Qt dialog shims (loaded only when Qt is installed),
+    # and prebuilt Node modules for musl and Android that glibc never loads.
+    skip=('*/libqt5_shim.so' '*/libqt6_shim.so' '*musl*' '*/prebuilds/android-*') ;;
+  *) echo "unknown APP: $app" >&2; exit 1 ;;
+esac
+
+echo "== files ($app)"
+for f in "${files[@]}"; do
   if [[ -e "$root/$f" ]]; then ok "$f"; else bad "missing $f"; fi
 done
-[[ -x "$lib/claude-desktop" ]] || bad "claude-desktop is not executable"
+[[ -x "$root/$exe" ]] || bad "$exe is not executable"
 
 if [[ "${CHECK_LIBS:-1}" == 1 ]]; then
   echo "== shared libraries"
+  prune=()
+  for p in "${skip[@]}"; do prune+=(-path "$p" -prune -o); done
   while IFS= read -r -d '' f; do
     file -b "$f" | grep -q 'dynamically linked' || continue
     missing=$(LD_LIBRARY_PATH="$lib" ldd "$f" 2>&1 | grep 'not found' || true)
     if [[ -n "$missing" ]]; then bad "${f#"$root"}:"$'\n'"$missing"; fi
-  done < <(find "$lib" -type f \( -perm -u+x -o -name '*.so*' -o -name '*.node' \) -print0)
+  done < <(find "$lib" "${prune[@]}" -type f \( -perm -u+x -o -name '*.so*' -o -name '*.node' \) -print0)
   (( fail )) || ok "all dynamic ELF files resolve their libraries"
 fi
 

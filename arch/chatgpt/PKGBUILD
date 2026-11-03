@@ -1,0 +1,62 @@
+# Maintainer: Sina Pirani <sinapiranidev@gmail.com>
+#
+# Repackages OpenAI's official Codex desktop app (package "chatgpt") .deb for
+# Arch Linux, Manjaro, EndeavourOS, CachyOS, Garuda, Arch Linux ARM and other
+# Arch-based distros. The .deb comes straight from OpenAI's apt repository;
+# the checksums below are taken from its GPG-signed index by scripts/upstream.sh.
+
+pkgname=chatgpt
+pkgver=26.1027.51404
+pkgrel=1
+pkgdesc="Codex desktop app by OpenAI (official ChatGPT build, repackaged)"
+arch=('x86_64' 'aarch64')
+url="https://developers.openai.com/codex/app"
+license=('LicenseRef-OpenAI-Proprietary')
+depends=(
+  'alsa-lib' 'at-spi2-core' 'cairo' 'dbus' 'expat' 'gcc-libs' 'gdk-pixbuf2'
+  'glib2' 'glibc' 'gtk3' 'libcups' 'libglvnd' 'libnotify' 'libusb' 'libx11'
+  'libxcb' 'libxcomposite' 'libxdamage' 'libxext' 'libxfixes' 'libxkbcommon'
+  'libxrandr' 'mesa' 'nspr' 'nss' 'openssl' 'pango' 'systemd-libs' 'tpm2-tss'
+  'xdg-utils' 'xz'
+)
+optdepends=(
+  'git: version control for Codex projects'
+  'xdg-desktop-portal-gtk: file chooser on GTK desktops'
+  'xdg-desktop-portal-kde: file chooser on KDE Plasma'
+  'gnome-keyring: keep you signed in (secret storage) outside KDE'
+  'kwallet: keep you signed in (secret storage) on KDE'
+  'libsecret: keep you signed in (secret storage)'
+  'pipewire: screen sharing on Wayland'
+  'vulkan-driver: GPU acceleration through Vulkan'
+)
+options=('!strip' '!debug')
+# 1.7 GB of files: zstd packs them in seconds (xz, Manjaro's default, takes minutes)
+PKGEXT='.pkg.tar.zst'
+_repo="https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt"
+source_x86_64=("$pkgname-$pkgver-amd64.deb::$_repo/chatgpt_${pkgver}_amd64.deb")
+source_aarch64=("$pkgname-$pkgver-arm64.deb::$_repo/chatgpt_${pkgver}_arm64.deb")
+sha256sums_x86_64=('46f1e22d028698fe9edaefd5847aece07c4509a30d3709e104220719d8c12822')
+sha256sums_aarch64=('2c2ba5cd2f5c13de5f5d93a5e1623fbb61ea4b3556571e5f7431a570f17f8fea')
+noextract=("$pkgname-$pkgver-amd64.deb" "$pkgname-$pkgver-arm64.deb")
+
+_debarch() { [[ $CARCH == aarch64 ]] && echo arm64 || echo amd64; }
+
+prepare() {
+  rm -rf deb && mkdir deb
+  bsdtar -xf "$pkgname-$pkgver-$(_debarch).deb" -C deb
+  local got
+  got=$(bsdtar -xOf deb/control.tar.* ./control | sed -n 's/^Version: //p')
+  [[ $got == "$pkgver" ]] || { error "deb is version $got, expected $pkgver"; return 1; }
+}
+
+package() {
+  # Only usr/: etc/ holds just the AppArmor profile, which only Ubuntu needs
+  # (it lets the app create user namespaces under Ubuntu's restriction).
+  bsdtar -xf deb/data.tar.* -C "$pkgdir" ./usr
+
+  # Debian-only files
+  rm -rf "$pkgdir/usr/share/lintian"
+  install -Dm644 "$pkgdir/usr/share/doc/chatgpt/copyright" \
+    "$pkgdir/usr/share/licenses/$pkgname/copyright"
+  rm -rf "$pkgdir/usr/share/doc"
+}

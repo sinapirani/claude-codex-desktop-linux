@@ -1,8 +1,9 @@
 name: update
 
-# Every 6 hours: if Anthropic published a new Claude Desktop version, update
-# all recipes, run the full test matrix on that change, and only then
-# fast-forward main and tag v<version>-1.
+# Every 6 hours: if Anthropic published a new Claude Desktop or OpenAI a new
+# Codex (ChatGPT desktop) version, update that app's recipes, run the full test
+# matrix on the change, and only then fast-forward main and tag the release
+# (Claude: v<version>-1, Codex: chatgpt-v<version>-1).
 on:
   schedule:
     - cron: "17 */6 * * *"
@@ -19,38 +20,49 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.bump.outputs.changed }}
-      version: ${{ steps.bump.outputs.version }}
+      claude_version: ${{ steps.bump.outputs.version_claude_desktop }}
+      chatgpt_version: ${{ steps.bump.outputs.version_chatgpt }}
       branch: ${{ steps.push.outputs.branch }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check Anthropic's signed index and bump
+      - name: Check the vendors' signed indexes and bump
         id: bump
-        run: scripts/bump.sh
-      - name: Repair Gentoo Manifest if it doesn't cover both architectures
-        id: manifest
-        if: steps.bump.outputs.changed != 'true'
         run: |
-          . ./upstream.env
-          m=gentoo/app-misc/claude-desktop/Manifest
-          n=$(grep -c "_${VERSION}_" "$m" 2>/dev/null) || n=0
-          if [ "$n" -lt 2 ]; then
-            scripts/gentoo-manifest.sh
-            echo "repaired=true" >> "$GITHUB_OUTPUT"
-          fi
+          scripts/bump.sh claude-desktop
+          scripts/bump.sh chatgpt
+      - name: Repair Gentoo Manifests that don't cover both architectures
+        id: manifest
+        run: |
+          for app in claude-desktop chatgpt; do
+            . "./upstream/$app.env"
+            m=gentoo/app-misc/$app/Manifest
+            n=$(grep -c "_${VERSION}_" "$m" 2>/dev/null) || n=0
+            if [ "$n" -lt 2 ]; then
+              scripts/gentoo-manifest.sh "$app"
+              echo "repaired=true" >> "$GITHUB_OUTPUT"
+            fi
+          done
       - name: Push to a staging branch
         id: push
-        if: steps.bump.outputs.changed == 'true' || steps.manifest.outputs.repaired == 'true'
+        if: >-
+          steps.bump.outputs.changed_claude_desktop == 'true' ||
+          steps.bump.outputs.changed_chatgpt == 'true' ||
+          steps.manifest.outputs.repaired == 'true'
         env:
-          VERSION: ${{ steps.bump.outputs.version }}
+          CLAUDE: ${{ steps.bump.outputs.version_claude_desktop }}
+          CHATGPT: ${{ steps.bump.outputs.version_chatgpt }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -n "$VERSION" ]; then
-            msg="Update Claude Desktop to $VERSION"; branch="auto/v$VERSION"
+          parts=()
+          [ -n "$CLAUDE" ] && parts+=("Claude Desktop to $CLAUDE")
+          [ -n "$CHATGPT" ] && parts+=("Codex (ChatGPT) to $CHATGPT")
+          if [ ${#parts[@]} -gt 0 ]; then
+            msg="Update $(IFS=,; echo "${parts[*]}" | sed 's/,/ and /g')"
           else
-            msg="Regenerate Gentoo Manifest"; branch="auto/manifest-$GITHUB_RUN_ID"
+            msg="Regenerate Gentoo Manifest"
           fi
+          branch="auto/update-$GITHUB_RUN_ID"
           git add -A
           git commit -m "$msg"
           git push --force origin "HEAD:refs/heads/$branch"
@@ -73,17 +85,24 @@ jobs:
       - name: Fast-forward main and tag
         env:
           BRANCH: ${{ needs.bump.outputs.branch }}
-          VERSION: ${{ needs.bump.outputs.version }}
+          CLAUDE: ${{ needs.bump.outputs.claude_version }}
+          CHATGPT: ${{ needs.bump.outputs.chatgpt_version }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch origin "$BRANCH"
           git merge --ff-only FETCH_HEAD
           git push origin HEAD:main
-          if [ -n "$VERSION" ]; then
-            git tag "v$VERSION-1"
-            git push origin "v$VERSION-1"
-            gh release create "v$VERSION-1" --title "Claude Desktop $VERSION" \
-              --notes "Recipes updated to Claude Desktop $VERSION (verified against Anthropic's signed apt index). No binaries are attached: build with the instructions in the README."
+          if [ -n "$CLAUDE" ]; then
+            git tag "v$CLAUDE-1"
+            git push origin "v$CLAUDE-1"
+            gh release create "v$CLAUDE-1" --title "Claude Desktop $CLAUDE" \
+              --notes "Recipes updated to Claude Desktop $CLAUDE (verified against Anthropic's signed apt index). No binaries are attached: build with the instructions in the README."
+          fi
+          if [ -n "$CHATGPT" ]; then
+            git tag "chatgpt-v$CHATGPT-1"
+            git push origin "chatgpt-v$CHATGPT-1"
+            gh release create "chatgpt-v$CHATGPT-1" --title "Codex (ChatGPT desktop) $CHATGPT" --latest=false \
+              --notes "Recipes updated to OpenAI's Codex desktop app (package chatgpt) $CHATGPT (verified against OpenAI's signed apt index). No binaries are attached: build with the instructions in the README."
           fi
           git push origin --delete "$BRANCH"
 

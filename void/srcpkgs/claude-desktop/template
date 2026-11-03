@@ -1,6 +1,6 @@
 # Template file for 'claude-desktop'
 # Repackages Anthropic's official .deb; checksums come from Anthropic's
-# GPG-signed apt index (github.com/sinapirani/claude-desktop-linux).
+# GPG-signed apt index (github.com/sinapirani/claude-codex-desktop-linux).
 pkgname=claude-desktop
 version=4.4212.0
 revision=1
