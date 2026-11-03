@@ -14,7 +14,7 @@ app_load "${1:-}" || { echo "usage: scripts/gentoo-manifest.sh APP" >&2; exit 1;
 # shellcheck disable=SC1090
 . "upstream/$APP.env"
 
-cache="${XDG_CACHE_HOME:-$HOME/.cache}/claude-desktop-linux"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/claude-codex-desktop-linux"
 mkdir -p "$cache"
 manifest=gentoo/app-misc/$APP/Manifest
 : >"$manifest.new"

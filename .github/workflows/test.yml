@@ -180,8 +180,8 @@ jobs:
         run: |
           emerge-webrsync -q
           mkdir -p /etc/portage/repos.conf
-          printf '[claude-desktop-linux]\nlocation = %s/gentoo\n' "$PWD" \
-            > /etc/portage/repos.conf/claude-desktop-linux.conf
+          printf '[claude-codex-desktop-linux]\nlocation = %s/gentoo\n' "$PWD" \
+            > /etc/portage/repos.conf/claude-codex-desktop-linux.conf
       - name: Fetch (verifies Manifest) and install into the image dir
         run: |
           cd gentoo/app-misc/$APP

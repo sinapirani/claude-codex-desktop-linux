@@ -62,7 +62,7 @@ need sha256sum coreutils
 need tar tar
 if ! command -v bsdtar >/dev/null; then need ar "binutils (or install libarchive for bsdtar)"; fi
 
-cache="${XDG_CACHE_HOME:-$HOME/.cache}/claude-desktop-linux"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/claude-codex-desktop-linux"
 mkdir -p "$cache" "$out"
 # Work on disk next to the cache: unpacked apps are large (Codex: ~1.7 GB)
 # and /tmp is often a small RAM disk.

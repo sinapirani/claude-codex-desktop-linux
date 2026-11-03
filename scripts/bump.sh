@@ -7,7 +7,7 @@
 #   VERSION    move to that exact release
 #   --check    only report: exit 0 if up to date, 10 if an update exists
 #
-# Downloads both .debs (cached in ~/.cache/claude-desktop-linux) because the
+# Downloads both .debs (cached in ~/.cache/claude-codex-desktop-linux) because the
 # Gentoo Manifest needs their SHA512/BLAKE2B, which the apt index doesn't list.
 #
 # In GitHub Actions it writes changed_<app>=true|false and version_<app>=X to

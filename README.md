@@ -62,7 +62,7 @@ Options go after `bash -s --`:
 
 Run it again to update. Run it as your normal user (it uses `sudo` where
 needed; `makepkg` and `xbps-src` refuse to run as root). It builds in
-`~/.cache/claude-desktop-linux`, not `/tmp`: Codex unpacks to about 1.7 GB.
+`~/.cache/claude-codex-desktop-linux`, not `/tmp`: Codex unpacks to about 1.7 GB.
 
 ## Manual install
 
@@ -120,14 +120,14 @@ Cowork: `sudo zypper install qemu-x86 qemu-ovmf-x86_64` (ARM: `qemu-arm qemu-uef
 The overlay (both apps) is published on the `gentoo-overlay` branch:
 
 ```sh
-sudo tee /etc/portage/repos.conf/claude-desktop-linux.conf <<'EOF'
-[claude-desktop-linux]
-location = /var/db/repos/claude-desktop-linux
+sudo tee /etc/portage/repos.conf/claude-codex-desktop-linux.conf <<'EOF'
+[claude-codex-desktop-linux]
+location = /var/db/repos/claude-codex-desktop-linux
 sync-type = git
 sync-uri = https://github.com/sinapirani/claude-codex-desktop-linux.git
 sync-git-clone-extra-opts = --branch gentoo-overlay --single-branch
 EOF
-sudo emaint sync -r claude-desktop-linux
+sudo emaint sync -r claude-codex-desktop-linux
 echo "app-misc/$APP ~amd64" | sudo tee /etc/portage/package.accept_keywords/$APP
 echo "app-misc/$APP all-rights-reserved" | sudo tee /etc/portage/package.license/$APP
 sudo emerge -av app-misc/$APP

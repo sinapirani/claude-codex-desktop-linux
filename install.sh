@@ -29,7 +29,7 @@ set -euo pipefail
 
 REPO="sinapirani/claude-codex-desktop-linux"
 TARBALL="https://github.com/$REPO/archive/refs/heads/main.tar.gz"
-CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/claude-desktop-linux"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/claude-codex-desktop-linux"
 
 app="" method="" cowork=0 uninstall=0 dry=0 yes=0
 usage() {
@@ -306,18 +306,18 @@ rpm)
 
 gentoo)
   kw=$([[ $ARCH == x86_64 ]] && echo '~amd64' || echo '~arm64')
-  conf=/etc/portage/repos.conf/claude-desktop-linux.conf
+  conf=/etc/portage/repos.conf/claude-codex-desktop-linux.conf
   if [[ ! -f $conf ]]; then
     root mkdir -p /etc/portage/repos.conf
-    (( dry )) || printf '%s\n' "[claude-desktop-linux]" \
-      "location = /var/db/repos/claude-desktop-linux" "sync-type = git" \
+    (( dry )) || printf '%s\n' "[claude-codex-desktop-linux]" \
+      "location = /var/db/repos/claude-codex-desktop-linux" "sync-type = git" \
       "sync-uri = https://github.com/$REPO.git" \
       "sync-git-clone-extra-opts = --branch gentoo-overlay --single-branch" \
       | as_root_tee "$conf"
     echo "  wrote $conf"
   fi
   command -v git >/dev/null || root emerge --ask=n --noreplace dev-vcs/git
-  root emaint sync -r claude-desktop-linux
+  root emaint sync -r claude-codex-desktop-linux
   # package.accept_keywords / package.license may be files or directories
   add_portage_line() {
     local base=$1 line=$2 target
