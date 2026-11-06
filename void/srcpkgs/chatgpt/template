@@ -2,7 +2,7 @@
 # Repackages OpenAI's official Codex desktop app .deb; checksums come from
 # OpenAI's GPG-signed apt index (github.com/sinapirani/claude-codex-desktop-linux).
 pkgname=chatgpt
-version=26.1029.61003
+version=26.1103.31037
 revision=1
 archs="x86_64 aarch64"
 depends="alsa-lib atk at-spi2-atk at-spi2-core cairo dbus-libs eudev-libudev
@@ -18,11 +18,11 @@ _repo="https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/cha
 case "$XBPS_TARGET_MACHINE" in
 x86_64)
 	distfiles="${_repo}/chatgpt_${version}_amd64.deb"
-	checksum=f3af8afec5d25c228eb6f4dbd9cfde0fea7ca5e4b42aff0145a1ded273d01b2d
+	checksum=32fed80ad3f8caf666e5860022361e9709d64aa318cfb19f548e8b458d4f6793
 	;;
 aarch64)
 	distfiles="${_repo}/chatgpt_${version}_arm64.deb"
-	checksum=4719adfb33fe68e7becdb8169cea5945a297ebb7e3aa9966de7c2a945242bc2b
+	checksum=4dd0a44712e0fa5821dd5fb8742f09beaef306da87ec43a9ab24142864ac8959
 	;;
 *)
 	broken="No distfiles available for this target"
