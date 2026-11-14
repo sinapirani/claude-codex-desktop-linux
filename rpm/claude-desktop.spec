@@ -5,8 +5,8 @@
 #
 # Build:  mkdir -p rpmbuild/SOURCES && rpmbuild -bb --undefine=_disable_source_fetch claude-desktop.spec
 
-%global sha256_x86_64  d10944fa5663b997400cf66c5c7738fd6acf654f8aaeaca5b994eb147aa6b35f
-%global sha256_aarch64 208b637e951f53d4621d6edc1598c21bda664602ed409ad37b6735021be9840e
+%global sha256_x86_64  b96208b207e450b740f7dbe304f6077fed80e7f3d37ddd545991c4e8201564cf
+%global sha256_aarch64 fe6cd8a70f96b96eb4e6b647300cfaee6aaff4ce133a0fbbe11c2cdb775f5a6a
 %global repo https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop
 
 %ifarch x86_64
@@ -25,7 +25,7 @@
 %global __arch_install_post %{nil}
 
 Name:           claude-desktop
-Version:        5.11492.2
+Version:        5.11492.5
 Release:        1%{?dist}
 Summary:        Desktop application for Claude.ai (official build, repackaged)
 License:        LicenseRef-Anthropic-Proprietary
