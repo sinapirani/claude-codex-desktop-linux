@@ -5,8 +5,8 @@
 #
 # Build:  mkdir -p rpmbuild/SOURCES && rpmbuild -bb --undefine=_disable_source_fetch chatgpt.spec
 
-%global sha256_x86_64  6c07206314f78bc1be51144599e01d27808a51f78e5d78c3deb1c680f7043c03
-%global sha256_aarch64 81670501c6b7d784ef2b9a62b32da031e81a0eac0f50ebd933d0a9956d7bec77
+%global sha256_x86_64  3baa1e745a5a3f59f917e92f25b9edf1284a0306b75f1f2e360a766df38b8b23
+%global sha256_aarch64 72b8b9ff2daa7bc750fb2149cec753f5ca06caef2157592777a45475f4292f27
 %global repo https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt
 
 %ifarch x86_64
@@ -27,7 +27,7 @@
 %global _binary_payload w3.zstdio
 
 Name:           chatgpt
-Version:        26.1117.31558
+Version:        26.1120.41243
 Release:        1%{?dist}
 Summary:        Codex desktop app by OpenAI (official ChatGPT build, repackaged)
 License:        LicenseRef-OpenAI-Proprietary
